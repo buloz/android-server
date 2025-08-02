@@ -1,0 +1,23 @@
+services:
+  websocket-client:
+    build: .
+    ports:
+      - "8880:80"  # Client HTML accessible sur http://localhost:8880
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+    restart: unless-stopped
+
+  websocket-client-dev:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "8881:8881"
+    command: >
+      sh -c "
+        npm install -g http-server &&
+        http-server -p 8881 --cors -o
+      "
+    profiles:
+      - dev

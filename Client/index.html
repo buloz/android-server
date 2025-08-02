@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Test WebSocket POC</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            padding: 20px; 
+            max-width: 800px; 
+            margin: 0 auto;
+        }
+        #messages { 
+            border: 1px solid #ccc; 
+            height: 300px; 
+            overflow-y: scroll; 
+            padding: 10px; 
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .message { 
+            margin-bottom: 5px; 
+            padding: 3px;
+        }
+        .system { 
+            color: #666; 
+            font-style: italic; 
+            background-color: #e9ecef;
+            border-radius: 3px;
+            padding: 5px;
+        }
+        .error { 
+            color: red; 
+            background-color: #f8d7da;
+            border-radius: 3px;
+            padding: 5px;
+        }
+        .user-message {
+            background-color: #d1ecf1;
+            border-radius: 3px;
+            padding: 5px;
+        }
+        input[type="text"] { 
+            width: 300px; 
+            padding: 8px; 
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button { 
+            padding: 8px 15px; 
+            margin: 0 5px; 
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        .connected { 
+            background-color: #d4edda; 
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .disconnected { 
+            background-color: #f8d7da; 
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        #status { 
+            padding: 10px; 
+            margin-bottom: 15px; 
+            border-radius: 5px; 
+            font-weight: bold;
+            text-align: center;
+        }
+        .control-group {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 Test WebSocket POC</h1>
+    
+    <div id="status" class="disconnected">❌ Déconnecté</div>
+    
+    <div class="control-group">
+        <input type="text" id="serverUrl" value="ws://localhost:8888/ws" placeholder="URL du serveur WebSocket">
+        <button id="connectBtn" class="btn-primary" onclick="connect()">🔗 Se connecter</button>
+        <button id="disconnectBtn" class="btn-danger" onclick="disconnect()" disabled>❌ Se déconnecter</button>
+    </div>
+    
+    <div id="messages"></div>
+    
+    <div class="input-group">
+        <input type="text" id="messageInput" placeholder="Tapez votre message ou /help..." disabled>
+        <button id="sendBtn" class="btn-success" onclick="sendMessage()" disabled>📤 Envoyer</button>
+        <button class="btn-primary" onclick="sendPing()" id="pingBtn" disabled>🏓 Ping</button>
+    </div>
+
+    <div style="margin-top: 20px; padding: 15px; background-color: #e9ecef; border-radius: 5px;">
+        <h3>📋 Commandes disponibles :</h3>
+        <ul>
+            <li><code>/ping</code> - Test de connexion</li>
+            <li><code>/time</code> - Heure du serveur</li>
+            <li><code>/clients</code> - Nombre de clients connectés</li>
+            <li><code>/help</code> - Aide</li>
+        </ul>
+    </div>
+
+    <script>
+        let ws = null;
+        let isConnected = false;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 3;
+
+        function connect() {
+            const url = document.getElementById('serverUrl').value.trim();
+            
+            if (!url) {
+                addMessage('❌ Veuillez entrer une URL valide', 'error');
+                return;
+            }
+            
+            try {
+                addMessage(`🔄 Tentative de connexion à ${url}...`, 'system');
+                ws = new WebSocket(url);
+                
+                ws.onopen = function(event) {
+                    isConnected = true;
+                    reconnectAttempts = 0;
+                    updateUI();
+                    addMessage('✅ Connecté au serveur WebSocket', 'system');
+                };
+
+                ws.onmessage = function(event) {
+                    addMessage(`📥 ${event.data}`, 'user-message');
+                };
+
+                ws.onclose = function(event) {
+                    isConnected = false;
+                    updateUI();
+                    
+                    if (event.wasClean) {
+                        addMessage(`✅ Connexion fermée proprement (code: ${event.code})`, 'system');
+                    } else {
+                        addMessage(`❌ Connexion fermée de manière inattendue (code: ${event.code})`, 'error');
+                        attemptReconnect();
+                    }
+                };
+
+                ws.onerror = function(error) {
+                    addMessage('❌ Erreur WebSocket: ' + (error.message || 'Erreur de connexion'), 'error');
+                    console.error('WebSocket error:', error);
+                };
+
+            } catch (error) {
+                addMessage('❌ Erreur lors de la création de la connexion: ' + error.message, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (ws && isConnected) {
+                addMessage('🔄 Déconnexion en cours...', 'system');
+                ws.close(1000, 'Déconnexion manuelle'); // Code 1000 = fermeture normale
+            }
+        }
+
+        function attemptReconnect() {
+            if (reconnectAttempts < maxReconnectAttempts) {
+                reconnectAttempts++;
+                addMessage(`🔄 Tentative de reconnexion ${reconnectAttempts}/${maxReconnectAttempts} dans 3 secondes...`, 'system');
+                
+                setTimeout(() => {
+                    if (!isConnected) {
+                        connect();
+                    }
+                }, 3000);
+            } else {
+                addMessage('❌ Nombre maximum de tentatives de reconnexion atteint', 'error');
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (message && ws && isConnected) {
+                try {
+                    ws.send(message);
+                    addMessage(`📤 Vous: ${message}`, 'system');
+                    input.value = '';
+                } catch (error) {
+                    addMessage('❌ Erreur lors de l\'envoi: ' + error.message, 'error');
+                }
+            }
+        }
+
+        function sendPing() {
+            if (ws && isConnected) {
+                try {
+                    ws.send('/ping');
+                    addMessage('📤 Ping envoyé', 'system');
+                } catch (error) {
+                    addMessage('❌ Erreur lors de l\'envoi du ping: ' + error.message, 'error');
+                }
+            }
+        }
+
+        function addMessage(message, className = '') {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${className}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            messageDiv.innerHTML = `[${timestamp}] ${message}`;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateUI() {
+            const status = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const messageInput = document.getElementById('messageInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const pingBtn = document.getElementById('pingBtn');
+            
+            if (isConnected) {
+                status.textContent = '✅ Connecté';
+                status.className = 'connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                pingBtn.disabled = false;
+            } else {
+                status.textContent = '❌ Déconnecté';
+                status.className = 'disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                messageInput.disabled = true;
+                sendBtn.disabled = true;
+                pingBtn.disabled = true;
+            }
+        }
+
+        // Envoyer message avec Entrée
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Initialisation de l'UI
+        updateUI();
+        
+        // Affichage du message de bienvenue
+        addMessage('👋 Bienvenue! Entrez l\'URL de votre serveur WebSocket et cliquez sur "Se connecter".', 'system');
+    </script>
+</body>
+</html>
