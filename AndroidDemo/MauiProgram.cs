@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Maui.Controls.Hosting;
 using Microsoft.Maui.Hosting;
 using System;
+using Microsoft.Extensions.DependencyInjection;
+
 #if DEBUG
 using Microsoft.Extensions.Logging;
 #endif
@@ -27,7 +29,7 @@ namespace AndroidDemo
             Register(builder);
 
 #if DEBUG
-    		builder.Logging.AddDebug();
+            builder.Logging.AddDebug();
 #endif
 
             return builder.Build();
@@ -38,6 +40,10 @@ namespace AndroidDemo
             ArgumentNullException.ThrowIfNull(builder);
 
             builder.Services.TryAddSingleton<IServerService, ServerProvider>();
+            builder.Services.TryAddSingleton<IMonitoringService, MonitoringService>();
+            builder.Services.TryAddSingleton<INetworkService, NetworkService>();
+            builder.Services.AddTransient<MainPage>();
         }
     }
+    
 }

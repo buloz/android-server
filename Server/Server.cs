@@ -4,8 +4,6 @@ using EmbedIO;
 using EmbedIO.Actions;
 using Server.Models;
 using Swan.Logging;
-using System.Net.Sockets;
-using System.Net;
 
 namespace AndroidDemo.Server;
 
@@ -15,20 +13,27 @@ public class ServerProvider : IServerService
 
     private WebServer? _webServer { get; set; }
 
+    private WebSocketSubscribe? _webSocketModule;
+
     private readonly ServerConfiguration _conf;
+
+    private readonly IMonitoringService _monitoringService;
+
+    private readonly INetworkService _networkService;
 
     public bool IsRunning => _webServer?.State == WebServerState.Listening;
 
     public string UrlPrefix => _conf.UrlPrefix;
 
-    public ServerProvider()
-    {
-        _conf = new ServerConfiguration();
-    }
+    public int ConnectedClientsCount => _webSocketModule?.ConnectedClientsCount ?? 0;
 
-    internal ServerProvider(Action<ServerConfiguration>? configure) : this()
+    public ServerProvider(
+        IMonitoringService monitoringService,
+        INetworkService networkService)
     {
-        configure?.Invoke(_conf);
+        _monitoringService = monitoringService;
+        _networkService = networkService;
+        _conf = new ServerConfiguration();
     }
 
     public async Task StartAsync()
@@ -39,6 +44,9 @@ public class ServerProvider : IServerService
         _webServer = CreateWebServer(UrlPrefix);
         _webServer.StateChanged += (s, e) => $"WebServer new state - {e.NewState}".Info();
 
+        _monitoringService.SetServerStatus(true);
+        _monitoringService.SetServerUrl($"{_networkService.GetIPAddress()}:{_conf.Port}");
+
         _ = Task.Run(async () =>
         {
             await _webServer.RunAsync(_cancellationTokenSource.Token);
@@ -47,6 +55,8 @@ public class ServerProvider : IServerService
 
     private WebServer CreateWebServer(string url)
     {
+        _webSocketModule = new WebSocketSubscribe("/ws", _monitoringService);
+
         return new WebServer(o => o
             .WithUrlPrefix(url)
             .WithMode(HttpListenerMode.EmbedIO))
@@ -58,7 +68,7 @@ public class ServerProvider : IServerService
                 {
                     await ctx.SendStringAsync("Hello from EmbedIO server!", "text/plain", System.Text.Encoding.UTF8);
                 }))
-            .WithModule(new WebSocketSubscribe("/ws"));
+            .WithModule(_webSocketModule);
     }
 
     public async Task StopAsync()

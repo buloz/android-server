@@ -1,19 +1,21 @@
 ﻿using EmbedIO.WebSockets;
-using System.Linq;
 using System.Text;
 
 namespace Server.Models
 {
     internal class WebSocketSubscribe : WebSocketModule
     {
-        public WebSocketSubscribe(string urlPath) : base(urlPath, true)
-        {
+        private readonly IMonitoringService _monitoringService;
 
+        public WebSocketSubscribe(string urlPath, IMonitoringService monitoringService) : base(urlPath, true)
+        {
+            _monitoringService = monitoringService;
         }
 
         protected override Task OnClientConnectedAsync(IWebSocketContext context)
         {
             Console.WriteLine($"Connected user: {context.Id}");
+            _monitoringService.NotifyClientConnected(context.Id);
 
             return SendAsync(context, $"Connection succeed. Session ID: {context.Id}");
         }
@@ -21,6 +23,8 @@ namespace Server.Models
         protected override Task OnClientDisconnectedAsync(IWebSocketContext context)
         {
             Console.WriteLine($"Disconnected user: {context.Id}");
+            _monitoringService.NotifyClientDisconnected(context.Id);
+            
             return BroadcastAsync($"Session {context.Id} closed.");
         }
 
@@ -28,6 +32,7 @@ namespace Server.Models
         {
             var message = Encoding.UTF8.GetString(buffer);
             Console.WriteLine($"Message from user {context.Id}: {message}");
+            _monitoringService.AddLog(message, LogLevel.Info);
 
             return ProcessMessageAsync(context, message);
         }
